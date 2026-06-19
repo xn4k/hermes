@@ -74,6 +74,10 @@ func main() {
 		cookieName: cookieName,
 	}
 
+	if err := migrateFeed(startupCtx, app); err != nil {
+		log.Fatalf("Feed-Migration fehlgeschlagen: %v", err)
+	}
+
 	e := echo.New()
 	e.Use(middleware.RequestLogger())
 	e.Use(middleware.Recover())
@@ -82,6 +86,11 @@ func main() {
 	e.POST("/api/login", app.handleLogin)
 	e.GET("/api/me", app.handleMe)
 	e.POST("/api/logout", app.handleLogout)
+
+	e.GET("/api/feed", app.handleListFeed)
+	e.POST("/api/feed", app.handleCreateFeedEntry)
+	e.DELETE("/api/feed/:id", app.handleDeleteFeedEntry)
+	e.PATCH("/api/feed/:id/pin", app.handleTogglePinFeedEntry)
 
 	port := os.Getenv("PORT")
 	if port == "" {

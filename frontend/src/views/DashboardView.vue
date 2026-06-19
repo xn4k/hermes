@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import FeedPanel from '../features/feed/FeedPanel.vue'
 
 type User = {
   id: number
@@ -49,7 +50,7 @@ onMounted(async () => {
         <p class="eyebrow">HERMES CAVE</p>
         <h1>Willkommen zurück, {{ user.displayName }}.</h1>
         <p class="subtitle">
-          Deine private lokale Kommandozentrale läuft auf Hermes.
+          Private lokale Kommandozentrale. Feed zuerst, Chaos später.
         </p>
       </div>
 
@@ -58,40 +59,42 @@ onMounted(async () => {
       </button>
     </section>
 
-    <section class="grid">
-      <article class="card">
-        <p class="card-label">System</p>
+    <section class="layout">
+      <FeedPanel class="feed" />
 
-        <div v-if="health" class="status-ok">
-          <span class="indicator"></span>
-          <div>
-            <strong>Online</strong>
-            <p>API: {{ health.status }}</p>
-            <p>Datenbank: {{ health.database }}</p>
+      <aside class="side">
+        <article class="card">
+          <p class="card-label">System</p>
+
+          <div v-if="health" class="status-ok">
+            <span class="indicator"></span>
+            <div>
+              <strong>Online</strong>
+              <p>API: {{ health.status }}</p>
+              <p>Datenbank: {{ health.database }}</p>
+            </div>
           </div>
-        </div>
 
-        <p v-else-if="healthError" class="error">
-          {{ healthError }}
-        </p>
+          <p v-else-if="healthError" class="error">
+            {{ healthError }}
+          </p>
 
-        <p v-else>
-          Lade Systemstatus …
-        </p>
-      </article>
+          <p v-else>
+            Lade Systemstatus …
+          </p>
+        </article>
 
-      <article class="card">
-        <p class="card-label">Identität</p>
-        <p>User-ID: {{ user.id }}</p>
-        <p>Username: {{ user.username }}</p>
-      </article>
+        <article class="card">
+          <p class="card-label">Identität</p>
+          <p>User-ID: {{ user.id }}</p>
+          <p>Username: {{ user.username }}</p>
+        </article>
 
-      <article class="card muted">
-        <p class="card-label">Nächster Schritt</p>
-        <p>
-          Als Nächstes bauen wir Notizen und wichtige Links ein.
-        </p>
-      </article>
+        <article class="card muted">
+          <p class="card-label">Demnächst</p>
+          <p>Quick Links, Wetter, Projekte, echte Hermes-Werte.</p>
+        </article>
+      </aside>
     </section>
   </main>
 </template>
@@ -107,7 +110,7 @@ onMounted(async () => {
   justify-content: space-between;
   gap: 2rem;
   align-items: flex-start;
-  width: min(100%, 1100px);
+  width: min(100%, 1180px);
   margin: 0 auto 2rem;
   padding: 2.5rem;
   border: 1px solid #273342;
@@ -148,16 +151,26 @@ h1 {
   border-color: #5ee6a8;
 }
 
-.grid {
+.layout {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 1rem;
-  width: min(100%, 1100px);
+  width: min(100%, 1180px);
   margin: 0 auto;
 }
 
+.feed {
+  min-width: 0;
+}
+
+.side {
+  display: grid;
+  align-content: start;
+  gap: 1rem;
+}
+
 .card {
-  min-height: 180px;
+  min-height: 150px;
   padding: 1.4rem;
   border: 1px solid #273342;
   border-radius: 18px;
@@ -191,7 +204,7 @@ h1 {
   opacity: 0.86;
 }
 
-@media (max-width: 850px) {
+@media (max-width: 900px) {
   .dashboard {
     padding: 1.2rem;
   }
@@ -201,7 +214,7 @@ h1 {
     padding: 1.5rem;
   }
 
-  .grid {
+  .layout {
     grid-template-columns: 1fr;
   }
 }
