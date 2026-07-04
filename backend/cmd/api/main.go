@@ -24,6 +24,7 @@ import (
 type App struct {
 	db         *pgxpool.Pool
 	cookieName string
+	news       *NewsService
 }
 
 type User struct {
@@ -72,6 +73,7 @@ func main() {
 	app := &App{
 		db:         db,
 		cookieName: cookieName,
+		news:       NewNewsService(newsSources),
 	}
 
 	if err := migrateFeed(startupCtx, app); err != nil {
@@ -91,6 +93,9 @@ func main() {
 	e.POST("/api/feed", app.handleCreateFeedEntry)
 	e.DELETE("/api/feed/:id", app.handleDeleteFeedEntry)
 	e.PATCH("/api/feed/:id/pin", app.handleTogglePinFeedEntry)
+
+	e.GET("/api/news", app.handleGetNews)
+	e.POST("/api/news/refresh", app.handleRefreshNews)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -348,6 +353,65 @@ func (app *App) handleLogout(c *echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]any{
 		"status": "logged_out",
+	})
+}
+
+func (app *App) handleGetNews(c *echo.Context) error {
+	if _, err := app.currentUser(c); err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]any{
+			"error": "not_authenticated",
+		})
+	}
+
+	articles, cached := app.news.getCachedArticles()
+	if cached {
+		return c.JSON(http.StatusOK, map[string]any{
+			"source":   "cache",
+			"count":    len(articles),
+			"articles": articles,
+		})
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 12*time.Second)
+	defer cancel()
+
+	articles, err := app.news.refresh(ctx)
+	if err != nil {
+		return c.JSON(http.StatusBadGateway, map[string]any{
+			"error":   "news_refresh_failed",
+			"details": err.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"source":   "refresh",
+		"count":    len(articles),
+		"articles": articles,
+	})
+}
+
+func (app *App) handleRefreshNews(c *echo.Context) error {
+	if _, err := app.currentUser(c); err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]any{
+			"error": "not_authenticated",
+		})
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 12*time.Second)
+	defer cancel()
+
+	articles, err := app.news.refresh(ctx)
+	if err != nil {
+		return c.JSON(http.StatusBadGateway, map[string]any{
+			"error":   "news_refresh_failed",
+			"details": err.Error(),
+		})
+	}
+
+	return c.JSON(http.StatusOK, map[string]any{
+		"source":   "manual_refresh",
+		"count":    len(articles),
+		"articles": articles,
 	})
 }
 

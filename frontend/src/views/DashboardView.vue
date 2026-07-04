@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import FeedPanel from '../features/feed/FeedPanel.vue'
+import NewsPanel from "../features/news/NewsPanel.vue";
 
 type User = {
   id: number
@@ -60,7 +61,10 @@ onMounted(async () => {
     </section>
 
     <section class="layout">
-      <FeedPanel class="feed" />
+      <div class="main-content">
+        <FeedPanel class="feed" />
+        <NewsPanel />
+      </div>
 
       <aside class="side">
         <article class="card">
@@ -100,6 +104,11 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.main-content {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
 .dashboard {
   min-height: 100vh;
   padding: 3rem;

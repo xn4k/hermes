@@ -1,0 +1,239 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"sync"
+	"time"
+
+	"github.com/mmcdole/gofeed"
+)
+
+type NewsCategory string
+
+const (
+	CategoryGermany    NewsCategory = "deutschland"
+	CategoryWorld      NewsCategory = "welt"
+	CategoryPolitics   NewsCategory = "politik"
+	CategoryTech       NewsCategory = "technik"
+	CategorySecurity   NewsCategory = "security"
+	CategoryScience    NewsCategory = "wissenschaft"
+	CategoryCulture    NewsCategory = "kultur"
+	CategoryMusic      NewsCategory = "musik"
+	CategoryLiterature NewsCategory = "literatur"
+	CategoryEconomy    NewsCategory = "wirtschaft"
+	CategorySports     NewsCategory = "sport"
+	CategoryWeather    NewsCategory = "wetter-klima"
+)
+
+type NewsSource struct {
+	ID       string       `json:"id"`
+	Name     string       `json:"name"`
+	FeedURL  string       `json:"feed_url"`
+	Category NewsCategory `json:"category"`
+	Enabled  bool         `json:"enabled"`
+}
+
+type NewsArticle struct {
+	ID          string       `json:"id"`
+	SourceID    string       `json:"sourceId"`
+	SourceName  string       `json:"sourceName"`
+	Category    NewsCategory `json:"category"`
+	Title       string       `json:"title"`
+	URL         string       `json:"url"`
+	Summary     string       `json:"summary"`
+	PublishedAt time.Time    `json:"publishedAt"`
+}
+
+type NewsCache struct {
+	Articles    []NewsArticle `json:"articles"`
+	RefreshedAt time.Time     `json:"refreshedAt"`
+}
+
+type NewsService struct {
+	sources  []NewsSource
+	cache    NewsCache
+	cacheTTL time.Duration
+	mu       sync.RWMutex
+}
+
+var newsSources = []NewsSource{
+	{
+		ID:       "tagesschau-deutschland",
+		Name:     "Tagesschau",
+		FeedURL:  "https://www.tagesschau.de/inland/index~rss2.xml",
+		Category: CategoryGermany,
+		Enabled:  true,
+	},
+	{
+		ID:       "tagesschau-welt",
+		Name:     "Tagesschau",
+		FeedURL:  "https://www.tagesschau.de/ausland/index~rss2.xml",
+		Category: CategoryWorld,
+		Enabled:  false,
+	},
+	{
+		ID:       "deutschlandfunk-politik",
+		Name:     "Deutschlandfunk",
+		FeedURL:  "https://www.deutschlandfunk.de/politikportal-100.rss",
+		Category: CategoryPolitics,
+		Enabled:  false,
+	},
+	{
+		ID:       "tagesschau-tech",
+		Name:     "Tagesschau",
+		FeedURL:  "https://www.tagesschau.de/wissen/technologie/index~rss2.xml",
+		Category: CategoryTech,
+		Enabled:  false,
+	},
+	{
+		ID:       "bsi-cert-bund",
+		Name:     "BSI / CERT-Bund",
+		FeedURL:  "https://www.bsi.bund.de/SiteGlobals/Functions/RSSFeed/RSSNewsfeed/RSSNewsfeed_WID.xml",
+		Category: CategorySecurity,
+		Enabled:  false,
+	},
+	{
+		ID:       "deutschlandfunk-wissenschaft",
+		Name:     "Deutschlandfunk",
+		FeedURL:  "https://www.deutschlandfunk.de/wissen-106.rss",
+		Category: CategoryScience,
+		Enabled:  false,
+	},
+	{
+		ID:       "deutschlandfunk-kultur",
+		Name:     "Deutschlandfunk",
+		FeedURL:  "https://www.deutschlandfunk.de/kulturportal-100.rss",
+		Category: CategoryCulture,
+		Enabled:  false,
+	},
+	{
+		ID:       "deutschlandfunk-musik",
+		Name:     "Deutschlandfunk Kultur",
+		FeedURL:  "https://www.deutschlandfunkkultur.de/musikportal-100.rss",
+		Category: CategoryMusic,
+		Enabled:  false,
+	},
+	{
+		ID:       "deutschlandfunk-literatur",
+		Name:     "Deutschlandfunk Kultur",
+		FeedURL:  "https://www.deutschlandfunkkultur.de/buecher-108.rss",
+		Category: CategoryLiterature,
+		Enabled:  false,
+	},
+	{
+		ID:       "deutschlandfunk-wirtschaft",
+		Name:     "Deutschlandfunk",
+		FeedURL:  "https://www.deutschlandfunk.de/wirtschaft-106.rss",
+		Category: CategoryEconomy,
+		Enabled:  false,
+	},
+	{
+		ID:       "deutschlandfunk-sport",
+		Name:     "Deutschlandfunk",
+		FeedURL:  "https://www.deutschlandfunk.de/sportportal-100.rss",
+		Category: CategorySports,
+		Enabled:  false,
+	},
+	{
+		ID:       "tagesschau-klima",
+		Name:     "Tagesschau",
+		FeedURL:  "https://www.tagesschau.de/wissen/klima/index~rss2.xml",
+		Category: CategoryWeather,
+		Enabled:  false,
+	},
+}
+
+func NewNewsService(sources []NewsSource) *NewsService {
+	return &NewsService{
+		sources:  sources,
+		cacheTTL: 15 * time.Minute,
+	}
+}
+
+func (s *NewsService) getCachedArticles() ([]NewsArticle, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if s.cache.RefreshedAt.IsZero() ||
+		time.Since(s.cache.RefreshedAt) >= s.cacheTTL {
+		return nil, false
+	}
+
+	articles := make([]NewsArticle, len(s.cache.Articles))
+	copy(articles, s.cache.Articles)
+
+	return articles, true
+}
+
+func (s *NewsService) setCachedArticles(articles []NewsArticle) {
+	copiedArticles := make([]NewsArticle, len(articles))
+	copy(copiedArticles, articles)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.cache = NewsCache{
+		Articles:    copiedArticles,
+		RefreshedAt: time.Now(),
+	}
+}
+
+func (s *NewsService) fetchSource(ctx context.Context, source NewsSource) ([]NewsArticle, error) {
+	parser := gofeed.NewParser()
+
+	feed, err := parser.ParseURLWithContext(source.FeedURL, ctx)
+	if err != nil {
+		return nil, fmt.Errorf("feed %s laden: %w", source.ID, err)
+	}
+
+	articles := make([]NewsArticle, 0, len(feed.Items))
+
+	for _, item := range feed.Items {
+		articleID := item.GUID
+		if articleID == "" {
+			articleID = item.Link
+		}
+
+		publishedAt := time.Time{}
+		if item.PublishedParsed != nil {
+			publishedAt = *item.PublishedParsed
+		} else if item.UpdatedParsed != nil {
+			publishedAt = *item.UpdatedParsed
+		}
+
+		articles = append(articles, NewsArticle{
+			ID:          source.ID + ":" + articleID,
+			SourceID:    source.ID,
+			SourceName:  source.Name,
+			Category:    source.Category,
+			Title:       item.Title,
+			URL:         item.Link,
+			Summary:     item.Description,
+			PublishedAt: publishedAt,
+		})
+	}
+
+	return articles, nil
+}
+
+func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, error) {
+	var allArticles []NewsArticle
+
+	for _, source := range s.sources {
+		if !source.Enabled {
+			continue
+		}
+
+		articles, err := s.fetchSource(ctx, source)
+		if err != nil {
+			return nil, err
+		}
+
+		allArticles = append(allArticles, articles...)
+	}
+
+	s.setCachedArticles(allArticles)
+
+	return allArticles, nil
+}
