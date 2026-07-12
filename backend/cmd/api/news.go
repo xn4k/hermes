@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -217,6 +219,31 @@ func (s *NewsService) fetchSource(ctx context.Context, source NewsSource) ([]New
 	return articles, nil
 }
 
+func normalizeArticles(articles []NewsArticle) []NewsArticle {
+	seen := make(map[string]bool)
+	normalized := make([]NewsArticle, 0, len(articles))
+
+	for _, article := range articles {
+		key := strings.TrimSpace(article.URL)
+		if key == "" {
+			key = strings.TrimSpace(article.ID)
+		}
+
+		if key == "" || seen[key] {
+			continue
+		}
+
+		seen[key] = true
+		normalized = append(normalized, article)
+	}
+
+	sort.SliceStable(normalized, func(i, j int) bool {
+		return normalized[i].PublishedAt.After(normalized[j].PublishedAt)
+	})
+
+	return normalized
+}
+
 func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, error) {
 	var allArticles []NewsArticle
 
@@ -233,7 +260,9 @@ func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, error) {
 		allArticles = append(allArticles, articles...)
 	}
 
-	s.setCachedArticles(allArticles)
+	normalizedArticles := normalizeArticles(allArticles)
 
-	return allArticles, nil
+	s.setCachedArticles(normalizedArticles)
+
+	return normalizedArticles, nil
 }
