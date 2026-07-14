@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/mmcdole/gofeed"
+
 	"sort"
 	"strings"
 	"sync"
@@ -249,6 +250,33 @@ func normalizeArticles(articles []NewsArticle) []NewsArticle {
 	return normalized
 }
 
+func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, error) {
+
+func normalizeArticles(articles []NewsArticle) []NewsArticle {
+	seen := make(map[string]bool)
+	normalized := make([]NewsArticle, 0, len(articles))
+
+	for _, article := range articles {
+		key := strings.TrimSpace(article.URL)
+		if key == "" {
+			key = strings.TrimSpace(article.ID)
+		}
+
+		if key == "" || seen[key] {
+			continue
+		}
+
+		seen[key] = true
+		normalized = append(normalized, article)
+	}
+
+	sort.SliceStable(normalized, func(i, j int) bool {
+		return normalized[i].PublishedAt.After(normalized[j].PublishedAt)
+	})
+
+	return normalized
+}
+
 func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, []NewsRefreshWarning, error) {
 	var allArticles []NewsArticle
 	var warnings []NewsRefreshWarning
@@ -281,4 +309,5 @@ func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, []NewsRefresh
 	s.setCachedArticles(normalizedArticles)
 
 	return normalizedArticles, warnings, nil
+
 }
