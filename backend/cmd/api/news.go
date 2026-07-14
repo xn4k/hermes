@@ -52,6 +52,12 @@ type NewsCache struct {
 	RefreshedAt time.Time     `json:"refreshedAt"`
 }
 
+type NewsRefreshWarning struct {
+	SourceID   string `json:"sourceId"`
+	SourceName string `json:"sourceName"`
+	Message    string `json:"message"`
+}
+
 type NewsService struct {
 	sources  []NewsSource
 	cache    NewsCache
@@ -72,77 +78,77 @@ var newsSources = []NewsSource{
 		Name:     "Tagesschau",
 		FeedURL:  "https://www.tagesschau.de/ausland/index~rss2.xml",
 		Category: CategoryWorld,
-		Enabled:  false,
+		Enabled:  true,
 	},
 	{
 		ID:       "deutschlandfunk-politik",
 		Name:     "Deutschlandfunk",
 		FeedURL:  "https://www.deutschlandfunk.de/politikportal-100.rss",
 		Category: CategoryPolitics,
-		Enabled:  false,
+		Enabled:  true,
 	},
 	{
 		ID:       "tagesschau-tech",
 		Name:     "Tagesschau",
 		FeedURL:  "https://www.tagesschau.de/wissen/technologie/index~rss2.xml",
 		Category: CategoryTech,
-		Enabled:  false,
+		Enabled:  true,
 	},
 	{
 		ID:       "bsi-cert-bund",
 		Name:     "BSI / CERT-Bund",
 		FeedURL:  "https://www.bsi.bund.de/SiteGlobals/Functions/RSSFeed/RSSNewsfeed/RSSNewsfeed_WID.xml",
 		Category: CategorySecurity,
-		Enabled:  false,
+		Enabled:  true,
 	},
 	{
 		ID:       "deutschlandfunk-wissenschaft",
 		Name:     "Deutschlandfunk",
 		FeedURL:  "https://www.deutschlandfunk.de/wissen-106.rss",
 		Category: CategoryScience,
-		Enabled:  false,
+		Enabled:  true,
 	},
 	{
 		ID:       "deutschlandfunk-kultur",
 		Name:     "Deutschlandfunk",
 		FeedURL:  "https://www.deutschlandfunk.de/kulturportal-100.rss",
 		Category: CategoryCulture,
-		Enabled:  false,
+		Enabled:  true,
 	},
 	{
 		ID:       "deutschlandfunk-musik",
 		Name:     "Deutschlandfunk Kultur",
 		FeedURL:  "https://www.deutschlandfunkkultur.de/musikportal-100.rss",
 		Category: CategoryMusic,
-		Enabled:  false,
+		Enabled:  true,
 	},
 	{
 		ID:       "deutschlandfunk-literatur",
 		Name:     "Deutschlandfunk Kultur",
 		FeedURL:  "https://www.deutschlandfunkkultur.de/buecher-108.rss",
 		Category: CategoryLiterature,
-		Enabled:  false,
+		Enabled:  true,
 	},
 	{
 		ID:       "deutschlandfunk-wirtschaft",
 		Name:     "Deutschlandfunk",
 		FeedURL:  "https://www.deutschlandfunk.de/wirtschaft-106.rss",
 		Category: CategoryEconomy,
-		Enabled:  false,
+		Enabled:  true,
 	},
 	{
 		ID:       "deutschlandfunk-sport",
 		Name:     "Deutschlandfunk",
 		FeedURL:  "https://www.deutschlandfunk.de/sportportal-100.rss",
 		Category: CategorySports,
-		Enabled:  false,
+		Enabled:  true,
 	},
 	{
 		ID:       "tagesschau-klima",
 		Name:     "Tagesschau",
 		FeedURL:  "https://www.tagesschau.de/wissen/klima/index~rss2.xml",
 		Category: CategoryWeather,
-		Enabled:  false,
+		Enabled:  true,
 	},
 }
 
@@ -245,7 +251,36 @@ func normalizeArticles(articles []NewsArticle) []NewsArticle {
 }
 
 func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, error) {
+
+func normalizeArticles(articles []NewsArticle) []NewsArticle {
+	seen := make(map[string]bool)
+	normalized := make([]NewsArticle, 0, len(articles))
+
+	for _, article := range articles {
+		key := strings.TrimSpace(article.URL)
+		if key == "" {
+			key = strings.TrimSpace(article.ID)
+		}
+
+		if key == "" || seen[key] {
+			continue
+		}
+
+		seen[key] = true
+		normalized = append(normalized, article)
+	}
+
+	sort.SliceStable(normalized, func(i, j int) bool {
+		return normalized[i].PublishedAt.After(normalized[j].PublishedAt)
+	})
+
+	return normalized
+}
+
+func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, []NewsRefreshWarning, error) {
+
 	var allArticles []NewsArticle
+	var warnings []NewsRefreshWarning
 
 	for _, source := range s.sources {
 		if !source.Enabled {
@@ -254,7 +289,13 @@ func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, error) {
 
 		articles, err := s.fetchSource(ctx, source)
 		if err != nil {
-			return nil, err
+			warnings = append(warnings, NewsRefreshWarning{
+				SourceID:   source.ID,
+				SourceName: source.Name,
+				Message:    err.Error(),
+			})
+
+			continue
 		}
 
 		allArticles = append(allArticles, articles...)

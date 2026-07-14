@@ -369,13 +369,14 @@ func (app *App) handleGetNews(c *echo.Context) error {
 			"source":   "cache",
 			"count":    len(articles),
 			"articles": articles,
+			"warnings": []NewsRefreshWarning{},
 		})
 	}
 
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 12*time.Second)
 	defer cancel()
 
-	articles, err := app.news.refresh(ctx)
+	articles, warnings, err := app.news.refresh(ctx)
 	if err != nil {
 		return c.JSON(http.StatusBadGateway, map[string]any{
 			"error":   "news_refresh_failed",
@@ -387,6 +388,7 @@ func (app *App) handleGetNews(c *echo.Context) error {
 		"source":   "refresh",
 		"count":    len(articles),
 		"articles": articles,
+		"warnings": warnings,
 	})
 }
 
@@ -400,7 +402,7 @@ func (app *App) handleRefreshNews(c *echo.Context) error {
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 12*time.Second)
 	defer cancel()
 
-	articles, err := app.news.refresh(ctx)
+	articles, warnings, err := app.news.refresh(ctx)
 	if err != nil {
 		return c.JSON(http.StatusBadGateway, map[string]any{
 			"error":   "news_refresh_failed",
@@ -412,6 +414,7 @@ func (app *App) handleRefreshNews(c *echo.Context) error {
 		"source":   "manual_refresh",
 		"count":    len(articles),
 		"articles": articles,
+		"warnings": warnings,
 	})
 }
 
