@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 
+type NewsWarning = {
+  sourceId: string;
+  sourceName: string;
+  message: string;
+};
+
 type NewsCategory =
   | "deutschland"
   | "welt"
@@ -30,6 +36,7 @@ type NewsResponse = {
   source: "cache" | "refresh" | "manual_refresh";
   count: number;
   articles: NewsArticle[];
+  warnings: NewsWarning[];
 };
 
 const articles = ref<NewsArticle[]>([]);
@@ -38,6 +45,7 @@ const loading = ref(false);
 const refreshing = ref(false);
 const error = ref("");
 const activeCategory = ref<NewsCategory | "alle">("alle");
+const warnings = ref<NewsWarning[]>([]);
 
 const categories: Array<{ key: NewsCategory | "alle"; label: string }> = [
   { key: "alle", label: "Alle" },
@@ -108,6 +116,7 @@ async function loadNews() {
 
     articles.value = data.articles;
     source.value = data.source;
+    warnings.value = data.warnings ?? [];
   } catch (err) {
     error.value =
       err instanceof Error ? err.message : "News konnten nicht geladen werden";
@@ -192,6 +201,16 @@ onMounted(loadNews);
       >
         {{ category.label }}
       </button>
+    </div>
+
+    <div v-if="warnings.length > 0" class="warning-box">
+      <strong>Einige Quellen konnten nicht geladen werden.</strong>
+
+      <ul>
+        <li v-for="warning in warnings" :key="warning.sourceId">
+          {{ warning.sourceName }}: {{ warning.message }}
+        </li>
+      </ul>
     </div>
 
     <p v-if="loading" class="info-text">
@@ -356,5 +375,22 @@ a.article-title:hover {
 .error-text {
   margin: 0;
   color: #e07a7a;
+}
+.warning-box {
+  padding: 0.9rem 1rem;
+  border: 1px solid rgba(255, 190, 100, 0.45);
+  border-radius: 0.75rem;
+  background: rgba(255, 190, 100, 0.08);
+  font-size: 0.86rem;
+}
+
+.warning-box ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.warning-box li {
+  margin: 0.25rem 0;
+  opacity: 0.8;
 }
 </style>
