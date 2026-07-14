@@ -3,12 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/mmcdole/gofeed"
 	"sort"
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/mmcdole/gofeed"
 )
 
 type NewsCategory string
@@ -17,7 +16,7 @@ const (
 	CategoryGermany    NewsCategory = "deutschland"
 	CategoryWorld      NewsCategory = "welt"
 	CategoryPolitics   NewsCategory = "politik"
-	CategoryTech       NewsCategory = "technik"
+	CategoryTech       NewsCategory = "tech"
 	CategorySecurity   NewsCategory = "security"
 	CategoryScience    NewsCategory = "wissenschaft"
 	CategoryCulture    NewsCategory = "kultur"
@@ -97,7 +96,7 @@ var newsSources = []NewsSource{
 	{
 		ID:       "bsi-cert-bund",
 		Name:     "BSI / CERT-Bund",
-		FeedURL:  "https://www.bsi.bund.de/SiteGlobals/Functions/RSSFeed/RSSNewsfeed/RSSNewsfeed_WID.xml",
+		FeedURL:  "https://www.bsi.bund.de/SiteGlobals/Functions/RSSFeed/RSSNewsfeed/RSSNewsfeed_Presse_Veranstaltungen.xml",
 		Category: CategorySecurity,
 		Enabled:  true,
 	},
@@ -250,35 +249,7 @@ func normalizeArticles(articles []NewsArticle) []NewsArticle {
 	return normalized
 }
 
-func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, error) {
-
-func normalizeArticles(articles []NewsArticle) []NewsArticle {
-	seen := make(map[string]bool)
-	normalized := make([]NewsArticle, 0, len(articles))
-
-	for _, article := range articles {
-		key := strings.TrimSpace(article.URL)
-		if key == "" {
-			key = strings.TrimSpace(article.ID)
-		}
-
-		if key == "" || seen[key] {
-			continue
-		}
-
-		seen[key] = true
-		normalized = append(normalized, article)
-	}
-
-	sort.SliceStable(normalized, func(i, j int) bool {
-		return normalized[i].PublishedAt.After(normalized[j].PublishedAt)
-	})
-
-	return normalized
-}
-
 func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, []NewsRefreshWarning, error) {
-
 	var allArticles []NewsArticle
 	var warnings []NewsRefreshWarning
 
@@ -303,7 +274,11 @@ func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, []NewsRefresh
 
 	normalizedArticles := normalizeArticles(allArticles)
 
+	if len(normalizedArticles) == 0 && len(warnings) > 0 {
+		return nil, warnings, fmt.Errorf("all news sources failed")
+	}
+
 	s.setCachedArticles(normalizedArticles)
 
-	return normalizedArticles, nil
+	return normalizedArticles, warnings, nil
 }
