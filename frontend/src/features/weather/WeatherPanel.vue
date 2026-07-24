@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { apiRequest } from '../../api'
+import WeatherOutlook from './WeatherOutlook.vue'
 
 type WeatherLocation = {
   name: string
@@ -590,6 +591,8 @@ onMounted(loadWeather)
           </article>
         </div>
       </section>
+
+      <WeatherOutlook :key="`${forecast.location.latitude}:${forecast.location.longitude}`" />
 
       <footer class="weather-footer">
         <span>

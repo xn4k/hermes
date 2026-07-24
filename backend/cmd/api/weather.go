@@ -242,6 +242,10 @@ func (app *App) weatherLocation(ctx context.Context, userID int64) (WeatherLocat
 }
 
 func (app *App) handleGetWeather(c *echo.Context) error {
+	if view := strings.TrimSpace(c.QueryParam("view")); view != "" {
+		return app.handleWeatherOutlook(c, view, false)
+	}
+
 	user, err := app.currentUser(c)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]any{"error": "not_authenticated"})
@@ -267,6 +271,10 @@ func (app *App) handleGetWeather(c *echo.Context) error {
 }
 
 func (app *App) handleRefreshWeather(c *echo.Context) error {
+	if view := strings.TrimSpace(c.QueryParam("view")); view != "" {
+		return app.handleWeatherOutlook(c, view, true)
+	}
+
 	user, err := app.currentUser(c)
 	if err != nil {
 		return c.JSON(http.StatusUnauthorized, map[string]any{"error": "not_authenticated"})
