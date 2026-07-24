@@ -25,6 +25,7 @@ type App struct {
 	db         *pgxpool.Pool
 	cookieName string
 	news       *NewsService
+	weather    *WeatherService
 }
 
 type User struct {
@@ -74,10 +75,15 @@ func main() {
 		db:         db,
 		cookieName: cookieName,
 		news:       NewNewsService(newsSources),
+		weather:    NewWeatherService(),
 	}
 
 	if err := migrateFeed(startupCtx, app); err != nil {
 		log.Fatalf("Feed-Migration fehlgeschlagen: %v", err)
+	}
+
+	if err := migrateWeather(startupCtx, app); err != nil {
+		log.Fatalf("Wetter-Migration fehlgeschlagen: %v", err)
 	}
 
 	e := echo.New()
@@ -96,6 +102,11 @@ func main() {
 
 	e.GET("/api/news", app.handleGetNews)
 	e.POST("/api/news/refresh", app.handleRefreshNews)
+
+	e.GET("/api/weather", app.handleGetWeather)
+	e.POST("/api/weather/refresh", app.handleRefreshWeather)
+	e.GET("/api/weather/locations", app.handleSearchWeatherLocations)
+	e.PUT("/api/weather/location", app.handleUpdateWeatherLocation)
 
 	port := os.Getenv("PORT")
 	if port == "" {

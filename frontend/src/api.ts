@@ -37,6 +37,19 @@ function fallbackMessage(status: number) {
   return `Die Anfrage ist fehlgeschlagen (HTTP ${status}).`
 }
 
+function messageForCode(code?: string) {
+  const messages: Record<string, string> = {
+    database_error: 'Die Datenbankanfrage ist fehlgeschlagen.',
+    entry_not_found: 'Der Eintrag wurde nicht gefunden.',
+    location_search_failed: 'Die Ortssuche ist gerade nicht erreichbar.',
+    weather_fetch_failed: 'Die Wettermodelle konnten nicht geladen werden.',
+    weather_settings_failed: 'Die Wettereinstellung konnte nicht geladen werden.',
+    invalid_location: 'Der ausgewählte Ort ist ungültig.',
+  }
+
+  return code ? messages[code] : undefined
+}
+
 export async function apiRequest<T>(
   url: string,
   options: ApiRequestOptions = {},
@@ -61,7 +74,10 @@ export async function apiRequest<T>(
     }
 
     throw new ApiError(
-      payload?.details || payload?.error || fallbackMessage(response.status),
+      messageForCode(payload?.error) ||
+        payload?.details ||
+        payload?.error ||
+        fallbackMessage(response.status),
       response.status,
       payload?.error,
     )

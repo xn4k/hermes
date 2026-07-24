@@ -3,112 +3,109 @@ import { computed, onMounted, ref } from 'vue'
 import { apiRequest } from '../../api'
 
 type NewsWarning = {
-  sourceId: string;
-  sourceName: string;
-  message: string;
-};
+  sourceId: string
+  sourceName: string
+  message: string
+}
 
 type NewsCategory =
-  | "deutschland"
-  | "welt"
-  | "politik"
-  | "tech"
-  | "security"
-  | "wissenschaft"
-  | "kultur"
-  | "musik"
-  | "literatur"
-  | "wirtschaft"
-  | "sport"
-  | "wetter-klima";
+  | 'deutschland'
+  | 'welt'
+  | 'politik'
+  | 'tech'
+  | 'security'
+  | 'wissenschaft'
+  | 'kultur'
+  | 'musik'
+  | 'literatur'
+  | 'wirtschaft'
+  | 'sport'
+  | 'wetter-klima'
 
 type NewsArticle = {
-  id: string;
-  sourceId: string;
-  sourceName: string;
-  category: NewsCategory;
-  title: string;
-  url: string;
-  summary: string;
-  publishedAt: string;
-};
+  id: string
+  sourceId: string
+  sourceName: string
+  category: NewsCategory
+  title: string
+  url: string
+  summary: string
+  publishedAt: string
+}
 
 type NewsResponse = {
-  source: "cache" | "refresh" | "manual_refresh";
-  count: number;
-  articles: NewsArticle[];
-  warnings: NewsWarning[];
-};
+  source: 'cache' | 'refresh' | 'manual_refresh'
+  count: number
+  articles: NewsArticle[]
+  warnings: NewsWarning[]
+}
 
-const articles = ref<NewsArticle[]>([]);
-const source = ref<NewsResponse["source"] | null>(null);
-const loading = ref(false);
-const refreshing = ref(false);
-const error = ref("");
-const activeCategory = ref<NewsCategory | "alle">("alle");
-const warnings = ref<NewsWarning[]>([]);
+const articles = ref<NewsArticle[]>([])
+const source = ref<NewsResponse['source'] | null>(null)
+const loading = ref(false)
+const refreshing = ref(false)
+const error = ref('')
+const activeCategory = ref<NewsCategory | 'alle'>('alle')
+const warnings = ref<NewsWarning[]>([])
 
-const categories: Array<{ key: NewsCategory | "alle"; label: string }> = [
-  { key: "alle", label: "Alle" },
-  { key: "deutschland", label: "Deutschland" },
-  { key: "welt", label: "Welt" },
-  { key: "politik", label: "Politik" },
-  { key: "tech", label: "Tech" },
-  { key: "security", label: "Security" },
-  { key: "wissenschaft", label: "Wissenschaft" },
-  { key: "kultur", label: "Kultur" },
-  { key: "musik", label: "Musik" },
-  { key: "literatur", label: "Literatur" },
-  { key: "wirtschaft", label: "Wirtschaft" },
-  { key: "sport", label: "Sport" },
-  { key: "wetter-klima", label: "Wetter & Klima" },
-];
+const categories: Array<{ key: NewsCategory | 'alle'; label: string }> = [
+  { key: 'alle', label: 'Alle' },
+  { key: 'deutschland', label: 'Deutschland' },
+  { key: 'welt', label: 'Welt' },
+  { key: 'politik', label: 'Politik' },
+  { key: 'tech', label: 'Tech' },
+  { key: 'security', label: 'Security' },
+  { key: 'wissenschaft', label: 'Wissenschaft' },
+  { key: 'kultur', label: 'Kultur' },
+  { key: 'musik', label: 'Musik' },
+  { key: 'literatur', label: 'Literatur' },
+  { key: 'wirtschaft', label: 'Wirtschaft' },
+  { key: 'sport', label: 'Sport' },
+  { key: 'wetter-klima', label: 'Wetter & Klima' },
+]
 
 const visibleArticles = computed(() => {
-  if (activeCategory.value === "alle") {
-    return articles.value;
+  if (activeCategory.value === 'alle') {
+    return articles.value
   }
 
-  return articles.value.filter(
-    (article) => article.category === activeCategory.value,
-  );
-});
+  return articles.value.filter((article) => article.category === activeCategory.value)
+})
 
 const sourceLabel = computed(() => {
-  if (source.value === "cache") {
-    return "aus Cache";
+  if (source.value === 'cache') {
+    return 'aus Cache'
   }
 
-  if (source.value === "refresh") {
-    return "gerade geladen";
+  if (source.value === 'refresh') {
+    return 'gerade geladen'
   }
 
-  if (source.value === "manual_refresh") {
-    return "manuell aktualisiert";
+  if (source.value === 'manual_refresh') {
+    return 'manuell aktualisiert'
   }
 
-  return "";
-});
+  return ''
+})
 
 async function requestNews(url: string, method = 'GET') {
   return apiRequest<NewsResponse>(url, { method })
 }
 
 async function loadNews() {
-  loading.value = true;
-  error.value = "";
+  loading.value = true
+  error.value = ''
 
   try {
-    const data = await requestNews("/api/news");
+    const data = await requestNews('/api/news')
 
-    articles.value = data.articles;
-    source.value = data.source;
-    warnings.value = data.warnings ?? [];
+    articles.value = data.articles
+    source.value = data.source
+    warnings.value = data.warnings ?? []
   } catch (err) {
-    error.value =
-      err instanceof Error ? err.message : "News konnten nicht geladen werden";
+    error.value = err instanceof Error ? err.message : 'News konnten nicht geladen werden'
   } finally {
-    loading.value = false;
+    loading.value = false
   }
 }
 
@@ -132,29 +129,29 @@ async function refreshNews() {
 
 function formatDate(value: string) {
   if (!value) {
-    return "";
+    return ''
   }
 
-  const date = new Date(value);
+  const date = new Date(value)
 
   if (Number.isNaN(date.getTime())) {
-    return "";
+    return ''
   }
 
-  return new Intl.DateTimeFormat("de-DE", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
+  return new Intl.DateTimeFormat('de-DE', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
 }
 
 function cleanSummary(value: string) {
   return value
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
-onMounted(loadNews);
+onMounted(loadNews)
 </script>
 
 <template>
@@ -174,7 +171,7 @@ onMounted(loadNews);
         :disabled="loading || refreshing"
         @click="refreshNews"
       >
-        {{ refreshing ? "Aktualisiert..." : "Refresh" }}
+        {{ refreshing ? 'Aktualisiert...' : 'Refresh' }}
       </button>
     </header>
 
@@ -201,9 +198,7 @@ onMounted(loadNews);
       </ul>
     </div>
 
-    <p v-if="loading" class="info-text">
-      Hermes sammelt Nachrichten ein.
-    </p>
+    <p v-if="loading" class="info-text">Hermes sammelt Nachrichten ein.</p>
 
     <p v-else-if="error" class="error-text">
       {{ error }}
@@ -214,11 +209,7 @@ onMounted(loadNews);
     </p>
 
     <div v-else class="article-list">
-      <article
-        v-for="article in visibleArticles"
-        :key="article.id"
-        class="article-card"
-      >
+      <article v-for="article in visibleArticles" :key="article.id" class="article-card">
         <div class="article-meta">
           <span class="category-label">{{ article.category }}</span>
           <span>{{ article.sourceName }}</span>

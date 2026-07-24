@@ -44,7 +44,6 @@ async function loadMe() {
       user.value = null
       return
     }
-
     bootError.value = err instanceof Error ? err.message : 'Unbekannter Fehler'
   } finally {
     booting.value = false
@@ -122,18 +121,9 @@ onBeforeUnmount(() => {
     </section>
   </main>
 
-  <LoginView
-    v-else-if="!user"
-    :error="authError"
-    :loading="authLoading"
-    @login="handleLogin"
-  />
+  <LoginView v-else-if="!user" :error="authError" :loading="authLoading" @login="handleLogin" />
 
-  <DashboardView
-    v-else
-    :user="user"
-    @logout="handleLogout"
-  />
+  <DashboardView v-else :user="user" @logout="handleLogout" />
 </template>
 
 <style scoped>
