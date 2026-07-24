@@ -127,17 +127,11 @@ onMounted(loadFeed)
         <h2>Gedankenstrom</h2>
       </div>
 
-      <button type="button" class="ghost" @click="loadFeed">
-        Refresh
-      </button>
+      <button type="button" class="ghost" @click="loadFeed">Refresh</button>
     </header>
 
     <form class="composer" @submit.prevent="createEntry">
-      <input
-        v-model="title"
-        placeholder="Titel optional"
-        aria-label="Titel"
-      >
+      <input v-model="title" placeholder="Titel optional" aria-label="Titel" />
 
       <textarea
         v-model="content"
@@ -158,13 +152,10 @@ onMounted(loadFeed)
       </div>
     </form>
 
-    <div v-if="loading" class="empty">
-      Feed wird geladen …
-    </div>
+    <div v-if="loading" class="empty">Feed wird geladen …</div>
 
     <div v-else-if="entries.length === 0" class="empty">
-      Noch keine Einträge. Hermes wartet auf deine ersten Gedanken.
-      Bedrohlich geduldig.
+      Noch keine Einträge. Hermes wartet auf deine ersten Gedanken. Bedrohlich geduldig.
     </div>
 
     <article
@@ -191,9 +182,7 @@ onMounted(loadFeed)
             {{ entry.pinned ? 'Unpin' : 'Pin' }}
           </button>
 
-          <button type="button" class="danger" @click="deleteEntry(entry.id)">
-            Löschen
-          </button>
+          <button type="button" class="danger" @click="deleteEntry(entry.id)">Löschen</button>
         </div>
       </div>
 

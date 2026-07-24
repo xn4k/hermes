@@ -45,8 +45,7 @@ async function loadMe() {
     const data = (await response.json()) as MeResponse
     user.value = data.user
   } catch (err) {
-    bootError.value =
-      err instanceof Error ? err.message : 'Unbekannter Fehler'
+    bootError.value = err instanceof Error ? err.message : 'Unbekannter Fehler'
   } finally {
     booting.value = false
   }
@@ -85,8 +84,7 @@ async function handleLogin(payload: LoginPayload) {
     const data = (await response.json()) as MeResponse
     user.value = data.user
   } catch (err) {
-    authError.value =
-      err instanceof Error ? err.message : 'Unbekannter Fehler'
+    authError.value = err instanceof Error ? err.message : 'Unbekannter Fehler'
   } finally {
     authLoading.value = false
   }
@@ -120,18 +118,9 @@ onMounted(loadMe)
     </section>
   </main>
 
-  <LoginView
-    v-else-if="!user"
-    :error="authError"
-    :loading="authLoading"
-    @login="handleLogin"
-  />
+  <LoginView v-else-if="!user" :error="authError" :loading="authLoading" @login="handleLogin" />
 
-  <DashboardView
-    v-else
-    :user="user"
-    @logout="handleLogout"
-  />
+  <DashboardView v-else :user="user" @logout="handleLogout" />
 </template>
 
 <style scoped>

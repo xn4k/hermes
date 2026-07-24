@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import FeedPanel from '../features/feed/FeedPanel.vue'
-import NewsPanel from "../features/news/NewsPanel.vue";
+import NewsPanel from '../features/news/NewsPanel.vue'
+import WeatherPanel from '../features/weather/WeatherPanel.vue'
 
 type User = {
   id: number
@@ -38,8 +39,7 @@ onMounted(async () => {
 
     health.value = (await response.json()) as HealthResponse
   } catch (err) {
-    healthError.value =
-      err instanceof Error ? err.message : 'Status konnte nicht geladen werden'
+    healthError.value = err instanceof Error ? err.message : 'Status konnte nicht geladen werden'
   }
 })
 </script>
@@ -50,18 +50,15 @@ onMounted(async () => {
       <div>
         <p class="eyebrow">HERMES CAVE</p>
         <h1>Willkommen zurück, {{ user.displayName }}.</h1>
-        <p class="subtitle">
-          Private lokale Kommandozentrale. Feed zuerst, Chaos später.
-        </p>
+        <p class="subtitle">Private lokale Kommandozentrale. Feed zuerst, Chaos später.</p>
       </div>
 
-      <button class="logout" type="button" @click="emit('logout')">
-        Logout
-      </button>
+      <button class="logout" type="button" @click="emit('logout')">Logout</button>
     </section>
 
     <section class="layout">
       <div class="main-content">
+        <WeatherPanel />
         <FeedPanel class="feed" />
         <NewsPanel />
       </div>
@@ -83,9 +80,7 @@ onMounted(async () => {
             {{ healthError }}
           </p>
 
-          <p v-else>
-            Lade Systemstatus …
-          </p>
+          <p v-else>Lade Systemstatus …</p>
         </article>
 
         <article class="card">
@@ -96,7 +91,7 @@ onMounted(async () => {
 
         <article class="card muted">
           <p class="card-label">Demnächst</p>
-          <p>Quick Links, Wetter, Projekte, echte Hermes-Werte.</p>
+          <p>Quick Links, Aufgaben, Kalender und Projekte.</p>
         </article>
       </aside>
     </section>
