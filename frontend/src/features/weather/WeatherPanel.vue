@@ -84,6 +84,8 @@ const locationResults = ref<WeatherLocation[]>([])
 const locationError = ref('')
 const searching = ref(false)
 const savingLocation = ref(false)
+const temperatureHoverIndex = ref<number | null>(null)
+const activeTemperatureSeriesId = ref<string | null>(null)
 
 function median(values: number[]) {
   if (values.length === 0) {
@@ -109,6 +111,20 @@ function formatHour(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   }).format(new Date(value))
+}
+
+function formatChartTime(value: string) {
+  return new Intl.DateTimeFormat('de-DE', {
+    weekday: 'short',
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
+function formatExactTemperature(value: number) {
+  return `${value.toFixed(1).replace('.', ',')}°`
 }
 
 function formatDay(value: string) {
@@ -245,19 +261,22 @@ const temperatureChart = computed(() => {
   const drawableWidth = width - paddingX * 2
   const drawableHeight = height - paddingY * 2
 
-  const paths = visibleModels.map((model) => ({
-    id: model.id,
-    name: model.name,
-    short: model.short,
-    color: model.color,
-    points: model.points
-      .map((point, index) => {
-        const x = paddingX + (index / Math.max(model.points.length - 1, 1)) * drawableWidth
-        const y = paddingY + ((max - point.temperature) / range) * drawableHeight
-        return `${x.toFixed(1)},${y.toFixed(1)}`
-      })
-      .join(' '),
-  }))
+  const paths = visibleModels.map((model) => {
+    const samples = model.points.map((point, index) => ({
+      x: paddingX + (index / Math.max(model.points.length - 1, 1)) * drawableWidth,
+      y: paddingY + ((max - point.temperature) / range) * drawableHeight,
+      value: point.temperature,
+      time: point.time,
+    }))
+    return {
+      id: model.id,
+      name: model.name,
+      short: model.short,
+      color: model.color,
+      points: samples.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '),
+      samples,
+    }
+  })
 
   const labelIndexes = [0, 6, 12, 18, 23].filter((index) => index < visibleModels[0]!.points.length)
   const labels = labelIndexes.map((index) => ({
@@ -265,10 +284,67 @@ const temperatureChart = computed(() => {
     text: formatHour(visibleModels[0]!.points[index]!.time),
   }))
 
-  return { width, height, paddingX, paddingY, min, max, paths, labels }
+  return {
+    width,
+    height,
+    paddingX,
+    paddingY,
+    min,
+    max,
+    paths,
+    labels,
+    times: visibleModels[0]!.points.map((point) => point.time),
+  }
 })
 
+const temperatureHover = computed(() => {
+  const index = temperatureHoverIndex.value
+  const currentChart = temperatureChart.value
+  if (index === null || !currentChart || !currentChart.times[index]) return null
+  const rows = currentChart.paths.flatMap((path) => {
+    const sample = path.samples[index]
+    return sample
+      ? [{ id: path.id, label: path.short, color: path.color, value: sample.value }]
+      : []
+  })
+  const firstSample = currentChart.paths[0]?.samples[index]
+  if (!firstSample) return null
+  return { index, time: currentChart.times[index]!, x: firstSample.x, rows }
+})
+
+function updateTemperatureHover(event: PointerEvent) {
+  const currentChart = temperatureChart.value
+  if (!currentChart) return
+  const svg = event.currentTarget as SVGSVGElement
+  const bounds = svg.getBoundingClientRect()
+  if (!bounds.width) return
+  const viewX = ((event.clientX - bounds.left) / bounds.width) * currentChart.width
+  const drawWidth = currentChart.width - currentChart.paddingX * 2
+  const ratio = Math.min(
+    1,
+    Math.max(0, (viewX - currentChart.paddingX) / Math.max(drawWidth, 1)),
+  )
+  temperatureHoverIndex.value = Math.round(
+    ratio * Math.max(currentChart.times.length - 1, 0),
+  )
+}
+
+function clearTemperatureHover(event: PointerEvent) {
+  if (event.pointerType !== 'touch') {
+    temperatureHoverIndex.value = null
+    activeTemperatureSeriesId.value = null
+  }
+}
+
+function moveTemperatureHover(direction: number) {
+  const length = temperatureChart.value?.times.length ?? 0
+  if (!length) return
+  const start = temperatureHoverIndex.value ?? (direction > 0 ? -1 : length)
+  temperatureHoverIndex.value = Math.min(length - 1, Math.max(0, start + direction))
+}
 async function loadWeather(refresh = false) {
+  temperatureHoverIndex.value = null
+  activeTemperatureSeriesId.value = null
   if (refresh) {
     refreshing.value = true
   } else {
@@ -490,6 +566,12 @@ onMounted(loadWeather)
           :viewBox="`0 0 ${temperatureChart.width} ${temperatureChart.height}`"
           role="img"
           aria-label="Temperaturvergleich der Wettermodelle"
+          tabindex="0"
+          @pointerdown="updateTemperatureHover"
+          @pointermove="updateTemperatureHover"
+          @pointerleave="clearTemperatureHover"
+          @keydown.left.prevent="moveTemperatureHover(-1)"
+          @keydown.right.prevent="moveTemperatureHover(1)"
         >
           <line
             :x1="temperatureChart.paddingX"
@@ -523,6 +605,19 @@ onMounted(loadWeather)
             :points="path.points"
             :stroke="path.color"
             class="model-line"
+            :class="{
+              highlighted: activeTemperatureSeriesId === path.id,
+              dimmed:
+                activeTemperatureSeriesId !== null && activeTemperatureSeriesId !== path.id,
+            }"
+          />
+          <polyline
+            v-for="path in temperatureChart.paths"
+            :key="`${path.id}-hit`"
+            :points="path.points"
+            class="model-line-hit"
+            @pointerenter="activeTemperatureSeriesId = path.id"
+            @pointerleave="activeTemperatureSeriesId = null"
           />
 
           <g v-for="label in temperatureChart.labels" :key="label.text">
@@ -542,6 +637,54 @@ onMounted(loadWeather)
               {{ label.text }}
             </text>
           </g>
+
+          <template v-if="temperatureHover">
+            <line
+              :x1="temperatureHover.x"
+              :x2="temperatureHover.x"
+              :y1="temperatureChart.paddingY"
+              :y2="temperatureChart.height - temperatureChart.paddingY"
+              class="chart-hover-line"
+            />
+            <template v-for="path in temperatureChart.paths" :key="`${path.id}-point`">
+              <circle
+                v-if="path.samples[temperatureHover.index]"
+                :cx="path.samples[temperatureHover.index]?.x"
+                :cy="path.samples[temperatureHover.index]?.y"
+                r="5"
+                :fill="path.color"
+                class="chart-hover-point"
+              />
+            </template>
+            <foreignObject
+              :x="
+                temperatureHover.x > temperatureChart.width * 0.7
+                  ? temperatureHover.x - 202
+                  : temperatureHover.x + 12
+              "
+              :y="temperatureChart.paddingY + 5"
+              width="190"
+              :height="40 + temperatureHover.rows.length * 25"
+              class="temperature-tooltip-object"
+            >
+              <div xmlns="http://www.w3.org/1999/xhtml" class="temperature-tooltip">
+                <strong>{{ formatChartTime(temperatureHover.time) }}</strong>
+                <span
+                  v-for="row in temperatureHover.rows"
+                  :key="row.id"
+                  :class="{
+                    muted:
+                      activeTemperatureSeriesId !== null &&
+                      activeTemperatureSeriesId !== row.id,
+                  }"
+                >
+                  <i :style="{ background: row.color }" />
+                  <span>{{ row.label }}</span>
+                  <b>{{ formatExactTemperature(row.value) }}</b>
+                </span>
+              </div>
+            </foreignObject>
+          </template>
         </svg>
       </section>
 
@@ -930,6 +1073,12 @@ button:disabled {
   width: 100%;
   margin-top: 0.7rem;
   overflow: visible;
+  outline: none;
+  touch-action: pan-y;
+  user-select: none;
+}
+.temperature-chart:focus-visible {
+  filter: drop-shadow(0 0 5px #7aa2ff66);
 }
 
 .model-line {
@@ -937,7 +1086,64 @@ button:disabled {
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 3;
+  transition: opacity 140ms ease, stroke-width 140ms ease;
 }
+.model-line.highlighted {
+  stroke-width: 5;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+.model-line.dimmed { opacity: 0.2; }
+.model-line-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+}
+.chart-hover-line {
+  stroke: #dbeafe;
+  stroke-dasharray: 3 4;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.chart-hover-point {
+  stroke: #0b1119;
+  stroke-width: 3;
+  pointer-events: none;
+}
+.temperature-tooltip-object {
+  overflow: visible;
+  pointer-events: none;
+}
+.temperature-tooltip {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #43536a;
+  border-radius: 10px;
+  background: #080d14f2;
+  box-shadow: 0 10px 30px #0009;
+  color: #edf4fa;
+  font-size: 12px;
+  backdrop-filter: blur(8px);
+}
+.temperature-tooltip > strong {
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid #273342;
+}
+.temperature-tooltip > span {
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  align-items: center;
+  gap: 0.35rem;
+  transition: opacity 140ms ease;
+}
+.temperature-tooltip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.temperature-tooltip b { font-variant-numeric: tabular-nums; }
+.temperature-tooltip .muted { opacity: 0.28; }
 
 .grid-line,
 .time-line {

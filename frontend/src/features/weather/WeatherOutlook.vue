@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { apiRequest } from '../../api'
 
 type View = '16' | '30'
@@ -62,6 +62,8 @@ const refreshing = ref(false)
 const error = ref('')
 const shortMetric = ref<'max' | 'min'>('max')
 const longMetric = ref<'temperature' | 'rain'>('temperature')
+const hoverIndex = ref<number | null>(null)
+const activeSeriesId = ref<string | null>(null)
 
 function median(values: number[]) {
   if (!values.length) return 0
@@ -74,6 +76,18 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(
     new Date(`${value}T12:00:00`),
   )
+}
+
+function formatLongDate(value: string) {
+  return new Intl.DateTimeFormat('de-DE', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  }).format(new Date(`${value}T12:00:00`))
+}
+
+function formatValue(value: number, unit: string) {
+  return `${value.toFixed(1).replace('.', ',')}${unit}`
 }
 
 function formatRefresh(value: string) {
@@ -133,20 +147,31 @@ const rawSeries = computed<RawSeries[]>(() => {
     ]
   }
 
-  return (data.value?.ensembles ?? []).map((model) => ({
-    id: model.id,
-    label: model.short,
-    color: model.color,
-    values: model.daily.map((day) =>
-      longMetric.value === 'temperature' ? day.temperatureMedian : day.precipitationMedian,
-    ),
-    lower: model.daily.map((day) =>
-      longMetric.value === 'temperature' ? day.temperatureP10 : day.precipitationP10,
-    ),
-    upper: model.daily.map((day) =>
-      longMetric.value === 'temperature' ? day.temperatureP90 : day.precipitationP90,
-    ),
-  }))
+  return (data.value?.ensembles ?? []).map((model) => {
+    const dayFor = (date: string) => model.daily.find((day) => day.date === date)
+    return {
+      id: model.id,
+      label: model.short,
+      color: model.color,
+      values: dates.value.map((date) => {
+        const day = dayFor(date)
+        if (!day) return NaN
+        return longMetric.value === 'temperature'
+          ? day.temperatureMedian
+          : day.precipitationMedian
+      }),
+      lower: dates.value.map((date) => {
+        const day = dayFor(date)
+        if (!day) return NaN
+        return longMetric.value === 'temperature' ? day.temperatureP10 : day.precipitationP10
+      }),
+      upper: dates.value.map((date) => {
+        const day = dayFor(date)
+        if (!day) return NaN
+        return longMetric.value === 'temperature' ? day.temperatureP90 : day.precipitationP90
+      }),
+    }
+  })
 })
 
 const chart = computed(() => {
@@ -179,13 +204,24 @@ const chart = computed(() => {
       .filter(Boolean)
       .join(' ')
   const series = rawSeries.value.map((item) => {
-    const upper =
-      item.upper?.map((value, index) => `${x(index).toFixed(1)},${y(value).toFixed(1)}`) ?? []
-    const lower =
+    const bandIndexes =
       item.lower
-        ?.map((value, index) => `${x(index).toFixed(1)},${y(value).toFixed(1)}`)
-        .reverse() ?? []
-    return { ...item, points: points(item.values), band: [...upper, ...lower].join(' ') }
+        ?.map((lower, index) => ({ index, lower, upper: item.upper?.[index] }))
+        .filter((point) => Number.isFinite(point.lower) && Number.isFinite(point.upper)) ?? []
+    const upper = bandIndexes.map(
+      (point) => `${x(point.index).toFixed(1)},${y(point.upper!).toFixed(1)}`,
+    )
+    const lower = bandIndexes
+      .map((point) => `${x(point.index).toFixed(1)},${y(point.lower).toFixed(1)}`)
+      .reverse()
+    return {
+      ...item,
+      points: points(item.values),
+      band: [...upper, ...lower].join(' '),
+      samples: item.values.map((value, index) =>
+        Number.isFinite(value) ? { x: x(index), y: y(value), value } : null,
+      ),
+    }
   })
   const tickCount = dates.value.length > 20 ? 6 : 5
   const ticks = Array.from({ length: tickCount }, (_, index) =>
@@ -202,11 +238,74 @@ const chart = computed(() => {
     unit: rain ? 'mm' : '°',
     series,
     ticks,
+    xPositions: dates.value.map((_, index) => x(index)),
   }
 })
 
+const hover = computed(() => {
+  const index = hoverIndex.value
+  const currentChart = chart.value
+  if (index === null || !currentChart || !dates.value[index]) return null
+
+  const rows = currentChart.series.flatMap((series) => {
+    const sample = series.samples[index]
+    if (!sample) return []
+    const lower = series.lower?.[index]
+    const upper = series.upper?.[index]
+    return [{
+      id: series.id,
+      label: series.id === 'model-span' ? 'Median' : series.label,
+      color: series.color,
+      value: sample.value,
+      lower: Number.isFinite(lower) ? lower! : null,
+      upper: Number.isFinite(upper) ? upper! : null,
+    }]
+  })
+
+  return {
+    index,
+    date: dates.value[index]!,
+    x: currentChart.xPositions[index]!,
+    rows,
+  }
+})
+
+function updateChartHover(event: PointerEvent) {
+  const currentChart = chart.value
+  if (!currentChart) return
+  const svg = event.currentTarget as SVGSVGElement
+  const bounds = svg.getBoundingClientRect()
+  if (!bounds.width) return
+  const viewX = ((event.clientX - bounds.left) / bounds.width) * currentChart.width
+  const drawWidth = currentChart.width - currentChart.paddingX * 2
+  const ratio = Math.min(
+    1,
+    Math.max(0, (viewX - currentChart.paddingX) / Math.max(drawWidth, 1)),
+  )
+  hoverIndex.value = Math.round(ratio * Math.max(dates.value.length - 1, 0))
+}
+
+function clearChartHover(event: PointerEvent) {
+  if (event.pointerType !== 'touch') {
+    hoverIndex.value = null
+    activeSeriesId.value = null
+  }
+}
+
+function moveChartHover(direction: number) {
+  if (!dates.value.length) return
+  const start = hoverIndex.value ?? (direction > 0 ? -1 : dates.value.length)
+  hoverIndex.value = Math.min(dates.value.length - 1, Math.max(0, start + direction))
+}
+
+watch([view, shortMetric, longMetric], () => {
+  hoverIndex.value = null
+  activeSeriesId.value = null
+})
 async function load(nextView: View, refresh = false) {
   view.value = nextView
+  hoverIndex.value = null
+  activeSeriesId.value = null
   error.value = ''
   if (refresh) refreshing.value = true
   else loading.value = true
@@ -302,6 +401,12 @@ async function load(nextView: View, refresh = false) {
           :viewBox="`0 0 ${chart.width} ${chart.height}`"
           role="img"
           :aria-label="`${data.horizonDays}-Tage-Wettervergleich`"
+          tabindex="0"
+          @pointerdown="updateChartHover"
+          @pointermove="updateChartHover"
+          @pointerleave="clearChartHover"
+          @keydown.left.prevent="moveChartHover(-1)"
+          @keydown.right.prevent="moveChartHover(1)"
         >
           <line
             :x1="chart.paddingX"
@@ -323,13 +428,29 @@ async function load(nextView: View, refresh = false) {
             :points="series.band"
             :fill="series.color"
             class="band"
+            :class="{ dimmed: activeSeriesId !== null && activeSeriesId !== series.id }"
           />
           <polyline
             v-for="series in chart.series"
             :key="series.id"
             :points="series.points"
             :stroke="series.color"
-            :class="['line', { dashed: series.dashed }]"
+            :class="[
+              'line',
+              {
+                dashed: series.dashed,
+                highlighted: activeSeriesId === series.id,
+                dimmed: activeSeriesId !== null && activeSeriesId !== series.id,
+              },
+            ]"
+          />
+          <polyline
+            v-for="series in chart.series"
+            :key="`${series.id}-hit`"
+            :points="series.points"
+            class="line-hit"
+            @pointerenter="activeSeriesId = series.id"
+            @pointerleave="activeSeriesId = null"
           />
           <text x="4" :y="chart.paddingY + 4" class="axis">
             {{ chart.maximum }}{{ chart.unit }}
@@ -349,6 +470,52 @@ async function load(nextView: View, refresh = false) {
               {{ tick.label }}
             </text>
           </g>
+
+          <template v-if="hover">
+            <line
+              :x1="hover.x"
+              :x2="hover.x"
+              :y1="chart.paddingY"
+              :y2="chart.height - chart.paddingY"
+              class="hover-line"
+            />
+            <template v-for="series in chart.series" :key="`${series.id}-point`">
+              <circle
+                v-if="series.samples[hover.index]"
+                :cx="series.samples[hover.index]?.x"
+                :cy="series.samples[hover.index]?.y"
+                r="5"
+                :fill="series.color"
+                class="hover-point"
+              />
+            </template>
+            <foreignObject
+              :x="hover.x > chart.width * 0.7 ? hover.x - 242 : hover.x + 12"
+              :y="chart.paddingY + 6"
+              width="230"
+              :height="Math.min(42 + hover.rows.length * 31, chart.height - chart.paddingY * 2)"
+              class="tooltip-object"
+            >
+              <div xmlns="http://www.w3.org/1999/xhtml" class="chart-tooltip">
+                <strong>{{ formatLongDate(hover.date) }}</strong>
+                <span
+                  v-for="row in hover.rows"
+                  :key="row.id"
+                  class="tooltip-row"
+                  :class="{ muted: activeSeriesId !== null && activeSeriesId !== row.id }"
+                >
+                  <i :style="{ background: row.color }" />
+                  <span>{{ row.label }}</span>
+                  <b>{{ formatValue(row.value, chart.unit) }}</b>
+                  <small v-if="row.lower !== null && row.upper !== null">
+                    {{ formatValue(row.lower, chart.unit) }}–{{
+                      formatValue(row.upper, chart.unit)
+                    }}
+                  </small>
+                </span>
+              </div>
+            </foreignObject>
+          </template>
         </svg>
         <small v-if="data.mode === 'ensemble'">
           Linie = Median · Fläche = mittlere 80 % der Szenarien.
@@ -516,20 +683,90 @@ button.active {
   width: 100%;
   margin-top: 0.6rem;
   overflow: visible;
+  outline: none;
+  touch-action: pan-y;
+  user-select: none;
+}
+.chart:focus-visible {
+  filter: drop-shadow(0 0 5px #7aa2ff66);
 }
 .band {
   opacity: 0.12;
+  transition: opacity 140ms ease;
 }
 .line {
   fill: none;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 3;
+  transition: opacity 140ms ease, stroke-width 140ms ease;
 }
 .dashed {
   stroke-dasharray: 7 6;
   stroke-width: 2;
 }
+.line.highlighted {
+  stroke-width: 5;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+.line.dimmed { opacity: 0.2; }
+.band.dimmed { opacity: 0.035; }
+.line-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+}
+.hover-line {
+  stroke: #dbeafe;
+  stroke-dasharray: 3 4;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+.hover-point {
+  stroke: #0b1119;
+  stroke-width: 3;
+  pointer-events: none;
+}
+.tooltip-object {
+  overflow: visible;
+  pointer-events: none;
+}
+.chart-tooltip {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #43536a;
+  border-radius: 10px;
+  background: #080d14f2;
+  box-shadow: 0 10px 30px #0009;
+  color: #edf4fa;
+  font-size: 12px;
+  backdrop-filter: blur(8px);
+}
+.chart-tooltip > strong {
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid #273342;
+}
+.tooltip-row {
+  display: grid;
+  grid-template-columns: 8px minmax(42px, 1fr) auto;
+  align-items: center;
+  gap: 0.35rem;
+  transition: opacity 140ms ease;
+}
+.tooltip-row i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.tooltip-row b { font-variant-numeric: tabular-nums; }
+.tooltip-row small {
+  grid-column: 2 / -1;
+  color: #8999ad;
+  font-size: 10px;
+}
+.tooltip-row.muted { opacity: 0.28; }
 .grid,
 .time-grid {
   stroke: #273342;
