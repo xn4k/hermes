@@ -3,11 +3,13 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/mmcdole/gofeed"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/mmcdole/gofeed"
+	"golang.org/x/sync/singleflight"
 )
 
 type NewsCategory string
@@ -58,10 +60,13 @@ type NewsRefreshWarning struct {
 }
 
 type NewsService struct {
-	sources  []NewsSource
-	cache    NewsCache
-	cacheTTL time.Duration
-	mu       sync.RWMutex
+	sources        []NewsSource
+	cache          NewsCache
+	cacheTTL       time.Duration
+	sourceTimeout  time.Duration
+	maxConcurrency int
+	mu             sync.RWMutex
+	refreshGroup   singleflight.Group
 }
 
 var newsSources = []NewsSource{
@@ -153,8 +158,10 @@ var newsSources = []NewsSource{
 
 func NewNewsService(sources []NewsSource) *NewsService {
 	return &NewsService{
-		sources:  sources,
-		cacheTTL: 15 * time.Minute,
+		sources:        sources,
+		cacheTTL:       15 * time.Minute,
+		sourceTimeout:  5 * time.Second,
+		maxConcurrency: 4,
 	}
 }
 
@@ -249,36 +256,116 @@ func normalizeArticles(articles []NewsArticle) []NewsArticle {
 	return normalized
 }
 
-func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, []NewsRefreshWarning, error) {
+type newsSourceResult struct {
+	source   NewsSource
+	articles []NewsArticle
+	err      error
+}
+
+type newsRefreshResult struct {
+	articles []NewsArticle
+	warnings []NewsRefreshWarning
+}
+
+func (s *NewsService) refreshSources(ctx context.Context) (newsRefreshResult, error) {
 	var allArticles []NewsArticle
 	var warnings []NewsRefreshWarning
+	enabledSources := make([]NewsSource, 0, len(s.sources))
 
 	for _, source := range s.sources {
-		if !source.Enabled {
-			continue
+		if source.Enabled {
+			enabledSources = append(enabledSources, source)
 		}
-
-		articles, err := s.fetchSource(ctx, source)
-		if err != nil {
-			warnings = append(warnings, NewsRefreshWarning{
-				SourceID:   source.ID,
-				SourceName: source.Name,
-				Message:    err.Error(),
-			})
-
-			continue
-		}
-
-		allArticles = append(allArticles, articles...)
 	}
+
+	maxConcurrency := s.maxConcurrency
+	if maxConcurrency < 1 {
+		maxConcurrency = 1
+	}
+
+	results := make(chan newsSourceResult, len(enabledSources))
+	semaphore := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+
+	for _, source := range enabledSources {
+		wg.Add(1)
+
+		go func(source NewsSource) {
+			defer wg.Done()
+
+			select {
+			case semaphore <- struct{}{}:
+				defer func() { <-semaphore }()
+			case <-ctx.Done():
+				results <- newsSourceResult{source: source, err: ctx.Err()}
+				return
+			}
+
+			sourceCtx, cancel := context.WithTimeout(ctx, s.sourceTimeout)
+			defer cancel()
+
+			articles, err := s.fetchSource(sourceCtx, source)
+			results <- newsSourceResult{
+				source:   source,
+				articles: articles,
+				err:      err,
+			}
+		}(source)
+	}
+
+	wg.Wait()
+	close(results)
+
+	for result := range results {
+		if result.err != nil {
+			warnings = append(warnings, NewsRefreshWarning{
+				SourceID:   result.source.ID,
+				SourceName: result.source.Name,
+				Message:    result.err.Error(),
+			})
+			continue
+		}
+
+		allArticles = append(allArticles, result.articles...)
+	}
+
+	sort.Slice(warnings, func(i, j int) bool {
+		return warnings[i].SourceID < warnings[j].SourceID
+	})
 
 	normalizedArticles := normalizeArticles(allArticles)
 
 	if len(normalizedArticles) == 0 && len(warnings) > 0 {
-		return nil, warnings, fmt.Errorf("all news sources failed")
+		return newsRefreshResult{warnings: warnings}, fmt.Errorf("all news sources failed")
 	}
 
 	s.setCachedArticles(normalizedArticles)
 
-	return normalizedArticles, warnings, nil
+	return newsRefreshResult{
+		articles: normalizedArticles,
+		warnings: warnings,
+	}, nil
+}
+
+func (s *NewsService) refresh(ctx context.Context) ([]NewsArticle, []NewsRefreshWarning, error) {
+	value, err, _ := s.refreshGroup.Do("news", func() (any, error) {
+		return s.refreshSources(ctx)
+	})
+	if err != nil {
+		if result, ok := value.(newsRefreshResult); ok {
+			return nil, result.warnings, err
+		}
+
+		return nil, nil, err
+	}
+
+	result := value.(newsRefreshResult)
+
+	articles := make([]NewsArticle, len(result.articles))
+	copy(articles, result.articles)
+
+	warnings := make([]NewsRefreshWarning, len(result.warnings))
+	copy(warnings, result.warnings)
+
+	return articles, warnings, nil
 }
