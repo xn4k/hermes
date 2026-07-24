@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref } from 'vue'
+import { apiRequest } from '../../api'
 
 type NewsWarning = {
   sourceId: string;
@@ -89,22 +90,8 @@ const sourceLabel = computed(() => {
   return "";
 });
 
-async function requestNews(url: string, method = "GET") {
-  const response = await fetch(url, {
-    method,
-    credentials: "include",
-  });
-
-  const data = (await response.json()) as NewsResponse & {
-    error?: string;
-    details?: string;
-  };
-
-  if (!response.ok) {
-    throw new Error(data.details || data.error || "News konnten nicht geladen werden");
-  }
-
-  return data;
+async function requestNews(url: string, method = 'GET') {
+  return apiRequest<NewsResponse>(url, { method })
 }
 
 async function loadNews() {
@@ -126,19 +113,20 @@ async function loadNews() {
 }
 
 async function refreshNews() {
-  refreshing.value = true;
-  error.value = "";
+  refreshing.value = true
+  error.value = ''
 
   try {
-    const data = await requestNews("/api/news/refresh", "POST");
+    const data = await requestNews('/api/news/refresh', 'POST')
 
-    articles.value = data.articles;
-    source.value = data.source;
+    articles.value = data.articles
+    source.value = data.source
+    warnings.value = data.warnings ?? []
   } catch (err) {
     error.value =
-      err instanceof Error ? err.message : "News konnten nicht aktualisiert werden";
+      err instanceof Error ? err.message : 'News konnten nicht aktualisiert werden'
   } finally {
-    refreshing.value = false;
+    refreshing.value = false
   }
 }
 
