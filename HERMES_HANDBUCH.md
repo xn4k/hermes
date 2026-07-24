@@ -41,18 +41,17 @@ Kurz gesagt:
 | News-Radar | Vorhanden | Zwölf RSS-Quellen, Kategorien, Cache, Teilfehler und manueller Refresh |
 | Wetterort | Vorhanden | Suche und persönliche Speicherung, Standard Köln-Dünnwald 51069 |
 | Wetter heute bis fünf Tage | Vorhanden | ICON, IFS und GFS, Modellvergleich und Konsens |
-| Interaktive Graph-Werte per Maus | Nächster Schritt | Punkt und exakte Werte beim Überfahren einer Kurve |
-| 16-Tage-Modellvergleich | Entwurf getestet, aktuell nicht im Repository | ICON, IFS, AIFS und GFS |
-| 30-Tage-Ensemblevergleich | Entwurf getestet, aktuell nicht im Repository | GFS GEFS und ECMWF EC46 mit Unsicherheitsband |
+| Interaktive Wetterdiagramme | Vorhanden | Maus, Touch, Einrasten, Punkte, Tooltip und Linienfokus |
+| 16-Tage-Modellvergleich | Vorhanden | ICON, IFS, AIFS und GFS mit nativer Modellreichweite |
+| 30-Tage-Ensemblevergleich | Vorhanden | GFS GEFS und ECMWF EC46 mit Median und P10–P90 |
 | Quicklinks | Idee | Persönliche Schnellzugriffe |
 | Aufgaben und Erinnerungen | Idee | Aufgaben, Fälligkeiten und Benachrichtigungen |
 | Kalender | Idee mit hoher Priorität | Termine und Tagesübersicht |
 | Projekte | Idee | Projektstatus und nächste Schritte |
 
-Wichtig: Die 16- und 30-Tage-Ansichten wurden in der letzten Ausbaurunde
-konzipiert und lokal getestet. Die dafür vorgesehenen Outlook-Dateien sind im
-aktuellen Checkout jedoch nicht vorhanden. Sie werden hier deshalb nicht als
-fertige Produktfunktion geführt.
+Die 16- und 30-Tage-Ansichten werden bewusst erst bei Bedarf geladen. Dadurch
+bleibt das normale Dashboard schnell, obwohl die Ensembleansicht wesentlich
+mehr Wetterdaten verarbeitet.
 
 ## So kannst du Hermes erklären
 
@@ -207,6 +206,50 @@ Für fünf Tage stehen je Modell zur Verfügung:
 Die Tagesübersicht verwendet Medianwerte der Modelle, damit ein einzelner
 Ausreißer die Zusammenfassung nicht dominiert.
 
+#### Interaktive Diagramme
+
+Alle Wetterdiagramme reagieren auf Maus, Touch und Tastatur:
+
+- Eine vertikale Hilfslinie folgt der gewählten Position.
+- Der 24-Stunden-Graph rastet auf die nächste Stunde ein.
+- Die 16- und 30-Tage-Graphen rasten auf den nächsten Tag ein.
+- Auf jeder an diesem Zeitpunkt verfügbaren Modelllinie erscheint ein Punkt.
+- Ein Tooltip zeigt Datum sowie exakte Werte mit einer Nachkommastelle.
+- Auf Touch-Geräten bleibt die Auswahl nach dem Tippen sichtbar.
+- Mit den Pfeiltasten kann die Auswahl schrittweise bewegt werden.
+- Eine direkt überfahrene Modelllinie wird hervorgehoben; andere Linien werden
+  vorübergehend zurückgenommen.
+
+Die Interaktion arbeitet ausschließlich mit bereits geladenen Daten. Sie erzeugt
+keine zusätzlichen API-Aufrufe und hat deshalb praktisch keinen Einfluss auf
+Ladezeit oder Backend.
+
+#### 16-Tage-Modellvergleich
+
+Das Langfrist-Lab vergleicht ICON, ECMWF IFS, ECMWF AIFS und GFS. Es kann
+zwischen täglichen Höchst- und Tiefstwerten umgeschaltet werden. Eine
+Medianlinie und die sichtbare Modellspanne helfen dabei, Ausreißer und
+Unsicherheit zu erkennen.
+
+Jede Modelllinie endet mit ihrer tatsächlichen nativen Vorhersagereichweite.
+Fehlende Werte werden weder verbunden noch als Punkt oder Tooltip-Zeile
+angezeigt.
+
+#### 30-Tage-Ensemblevergleich
+
+Die 30-Tage-Ansicht vergleicht GFS GEFS mit 31 Läufen und ECMWF EC46 mit 51
+Läufen. Sie kann zwischen Temperatur und Niederschlag umgeschaltet werden.
+
+Pro Ensemble zeigt Hermes:
+
+- den Median beziehungsweise `P50` als Linie,
+- `P10` bis `P90` als schattiertes Unsicherheitsband,
+- im Tooltip den exakten Median und die beiden Bandgrenzen,
+- nur Werte innerhalb der tatsächlich gelieferten Reichweite.
+
+Die Fläche enthält die mittleren 80 Prozent der Szenarien. Sie ist keine
+klassische Fehlergrenze, sondern visualisiert die Streuung der Modellläufe.
+
 #### Hermes-Konsens
 
 Hermes zeigt nicht nur Rohdaten, sondern fasst die Modelllage zusammen:
@@ -270,6 +313,9 @@ Alle Routen beginnen mit `/api`.
 | `POST` | `/news/refresh` | News-Aktualisierung erzwingen |
 | `GET` | `/weather` | Wetter für den gespeicherten Ort laden |
 | `POST` | `/weather/refresh` | Wetter-Aktualisierung erzwingen |
+| `GET` | `/weather?view=16` | 16-Tage-Modellvergleich laden |
+| `GET` | `/weather?view=30` | 30-Tage-Ensemblevergleich laden |
+| `POST` | `/weather/refresh?view=16|30` | Gewählten Langfristausblick aktualisieren |
 | `GET` | `/weather/locations?q=...` | Orte über Open-Meteo suchen |
 | `PUT` | `/weather/location` | Persönlichen Wetterort speichern |
 
@@ -397,8 +443,10 @@ hermes/
 │   │   ├── main.go          # Start, Auth, Sitzungen, Routen, Benutzer
 │   │   ├── feed.go          # Persönlicher Feed
 │   │   ├── news.go          # RSS-Quellen, Cache und paralleler Refresh
-│   │   ├── weather.go       # Ort, Modelle, Konsens und Wetter-API
-│   │   └── weather_test.go  # Tests der Wetterlogik
+│   │   ├── weather.go               # Ort, Konsens und 5-Tage-Wetter
+│   │   ├── weather_outlook.go       # 16-/30-Tage-Modell- und Ensembledaten
+│   │   ├── weather_test.go          # Tests der kurzfristigen Wetterlogik
+│   │   └── weather_outlook_test.go  # Tests der Langfristlogik
 │   ├── Dockerfile
 │   └── go.mod
 ├── frontend/
@@ -409,7 +457,9 @@ hermes/
 │   │   └── features/
 │   │       ├── feed/FeedPanel.vue
 │   │       ├── news/NewsPanel.vue
-│   │       └── weather/WeatherPanel.vue
+│   │       └── weather/
+│   │           ├── WeatherPanel.vue    # Wetterzentrale und 24-Stunden-Graph
+│   │           └── WeatherOutlook.vue  # 16-/30-Tage-Lab und Interaktion
 │   ├── nginx.conf
 │   ├── package.json
 │   └── Dockerfile
@@ -446,6 +496,15 @@ hermes/
 - Ein Modellkonsens mit Spanne, Vertrauen, Regenlage und Hitzehinweis wurde
   ergänzt.
 - Cache, manueller Refresh und Rückfall auf ältere Daten wurden umgesetzt.
+- Das Langfrist-Lab mit 16-Tage-Einzelläufen und 30-Tage-Ensembles wurde
+  ergänzt.
+- Modelllinien enden korrekt mit ihrer tatsächlichen Datenreichweite.
+- Alle Wettergraphen erhielten Maus-, Touch- und Tastaturinteraktion.
+- Vertikale Hilfslinie, Modellpunkte und exakte Tooltips wurden ergänzt.
+- Die 30-Tage-Ansicht zeigt Median sowie P10–P90 für Temperatur und
+  Niederschlag.
+- Die Interaktion wurde mit Typecheck, Produktionsbuild, Linter und einem
+  vollständigen Docker-Neubau geprüft.
 
 ### Bewusst nicht überzogen
 
@@ -463,44 +522,11 @@ Infrastruktur, sobald ein echter Bedarf entsteht.
 
 ## Nächste sinnvolle Schritte
 
-### Priorität 1: Interaktive Wetterdiagramme
+Die zuvor priorisierten Wetterpunkte – interaktive Diagramme,
+16-Tage-Modellvergleich und 30-Tage-Ensemble – sind abgeschlossen. Damit rückt
+die nächste Hermes-Säule nach vorne.
 
-Beim Überfahren einer Kurve sollte Hermes:
-
-- eine vertikale Hilfslinie einblenden,
-- auf jeder Modellkurve einen Punkt markieren,
-- Datum und Uhrzeit anzeigen,
-- exakte Temperaturwerte je Modell nennen,
-- bei Regenansichten Wahrscheinlichkeit und Menge zeigen,
-- auf Touch-Geräten per Tippen funktionieren.
-
-Das verursacht praktisch keine relevante Verlangsamung. Die Werte sind bereits
-geladen; das Frontend muss nur den Mauszeiger einer vorhandenen Diagrammposition
-zuordnen. Zusätzliche API-Aufrufe sind dafür nicht notwendig.
-
-### Priorität 2: 16-Tage-Modellvergleich
-
-Sinnvoll ist ein eigener, bei Bedarf geladener Langfristbereich:
-
-- ICON, IFS, AIFS und GFS soweit in der jeweiligen Reichweite verfügbar,
-- tägliche Höchst- und Tiefsttemperaturen,
-- Umschaltung zwischen Maximum und Minimum,
-- Medianlinie und sichtbare Modellspanne,
-- deutlicher Hinweis, dass die Unsicherheit mit jedem Tag wächst.
-
-### Priorität 3: 30-Tage-Ensemble
-
-Für 30 Tage sollte kein einzelner scheinbar exakter Wert gezeigt werden.
-Stattdessen ist ein Ensemblevergleich sinnvoll:
-
-- GFS GEFS mit mehreren Rechenläufen,
-- ECMWF EC46 mit mehreren Rechenläufen,
-- Median `P50`,
-- Unsicherheitsband zwischen `P10` und `P90`,
-- getrennte Ansichten für Temperatur und Niederschlag,
-- spätes Laden und eigener Cache, weil die Datenmenge größer ist.
-
-### Priorität 4: Kalender
+### Priorität 1: Kalender
 
 Der Kalender ist die logisch nächste große Hermes-Säule:
 
@@ -515,7 +541,7 @@ Für den ersten lokalen Schritt reicht ein eigener Hermes-Kalender. Eine externe
 Synchronisation sollte erst danach ergänzt werden, damit Datenmodell und
 Bedienung nicht direkt von einem Anbieter abhängen.
 
-### Priorität 5: Aufgaben und Erinnerungen
+### Priorität 2: Aufgaben und Erinnerungen
 
 Ein möglicher MVP:
 
