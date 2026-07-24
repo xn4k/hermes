@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { apiRequest } from '../../api'
 
 type NewsWarning = {
   sourceId: string
@@ -88,21 +89,7 @@ const sourceLabel = computed(() => {
 })
 
 async function requestNews(url: string, method = 'GET') {
-  const response = await fetch(url, {
-    method,
-    credentials: 'include',
-  })
-
-  const data = (await response.json()) as NewsResponse & {
-    error?: string
-    details?: string
-  }
-
-  if (!response.ok) {
-    throw new Error(data.details || data.error || 'News konnten nicht geladen werden')
-  }
-
-  return data
+  return apiRequest<NewsResponse>(url, { method })
 }
 
 async function loadNews() {
@@ -131,8 +118,10 @@ async function refreshNews() {
 
     articles.value = data.articles
     source.value = data.source
+    warnings.value = data.warnings ?? []
   } catch (err) {
-    error.value = err instanceof Error ? err.message : 'News konnten nicht aktualisiert werden'
+    error.value =
+      err instanceof Error ? err.message : 'News konnten nicht aktualisiert werden'
   } finally {
     refreshing.value = false
   }

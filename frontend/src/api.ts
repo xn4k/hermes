@@ -50,7 +50,10 @@ function messageForCode(code?: string) {
   return code ? messages[code] : undefined
 }
 
-export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}): Promise<T> {
+export async function apiRequest<T>(
+  url: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
   const { notifyUnauthorized = true, ...requestOptions } = options
   const response = await fetch(url, {
     credentials: 'same-origin',

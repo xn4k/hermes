@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { apiRequest } from '../api'
 import FeedPanel from '../features/feed/FeedPanel.vue'
 import NewsPanel from '../features/news/NewsPanel.vue'
 import WeatherPanel from '../features/weather/WeatherPanel.vue'
@@ -29,15 +30,7 @@ const healthError = ref('')
 
 onMounted(async () => {
   try {
-    const response = await fetch('/api/health', {
-      credentials: 'same-origin',
-    })
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`)
-    }
-
-    health.value = (await response.json()) as HealthResponse
+    health.value = await apiRequest<HealthResponse>('/api/health')
   } catch (err) {
     healthError.value = err instanceof Error ? err.message : 'Status konnte nicht geladen werden'
   }

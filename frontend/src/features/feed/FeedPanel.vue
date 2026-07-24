@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { apiRequest } from '../../api'
 
 type FeedEntry = {
   id: number
@@ -24,6 +25,7 @@ const title = ref('')
 const content = ref('')
 const loading = ref(true)
 const saving = ref(false)
+const actionEntryId = ref<number | null>(null)
 const error = ref('')
 
 function formatDate(value: string) {
@@ -38,15 +40,7 @@ async function loadFeed() {
   error.value = ''
 
   try {
-    const response = await fetch('/api/feed', {
-      credentials: 'same-origin',
-    })
-
-    if (!response.ok) {
-      throw new Error(`Feed konnte nicht geladen werden: HTTP ${response.status}`)
-    }
-
-    const data = (await response.json()) as FeedResponse
+    const data = await apiRequest<FeedResponse>('/api/feed')
     entries.value = data.entries
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Unbekannter Fehler'
@@ -66,9 +60,8 @@ async function createEntry() {
   error.value = ''
 
   try {
-    const response = await fetch('/api/feed', {
+    const data = await apiRequest<CreateFeedResponse>('/api/feed', {
       method: 'POST',
-      credentials: 'same-origin',
       headers: {
         'Content-Type': 'application/json',
       },
@@ -79,11 +72,6 @@ async function createEntry() {
       }),
     })
 
-    if (!response.ok) {
-      throw new Error(`Eintrag konnte nicht gespeichert werden: HTTP ${response.status}`)
-    }
-
-    const data = (await response.json()) as CreateFeedResponse
     entries.value = [data.entry, ...entries.value]
     title.value = ''
     content.value = ''
@@ -95,24 +83,43 @@ async function createEntry() {
 }
 
 async function deleteEntry(entryId: number) {
-  const response = await fetch(`/api/feed/${entryId}`, {
-    method: 'DELETE',
-    credentials: 'same-origin',
-  })
+  actionEntryId.value = entryId
+  error.value = ''
 
-  if (response.ok) {
+  try {
+    await apiRequest<{ status: string }>(`/api/feed/${entryId}`, {
+      method: 'DELETE',
+    })
     entries.value = entries.value.filter((entry) => entry.id !== entryId)
+  } catch (err) {
+    error.value =
+      err instanceof Error ? err.message : 'Eintrag konnte nicht gelöscht werden'
+  } finally {
+    actionEntryId.value = null
   }
 }
 
 async function togglePin(entryId: number) {
-  const response = await fetch(`/api/feed/${entryId}/pin`, {
-    method: 'PATCH',
-    credentials: 'same-origin',
-  })
+  actionEntryId.value = entryId
+  error.value = ''
 
-  if (response.ok) {
-    await loadFeed()
+  try {
+    const data = await apiRequest<CreateFeedResponse>(`/api/feed/${entryId}/pin`, {
+      method: 'PATCH',
+    })
+
+    entries.value = entries.value
+      .map((entry) => (entry.id === entryId ? data.entry : entry))
+      .sort(
+        (a, b) =>
+          Number(b.pinned) - Number(a.pinned) ||
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+  } catch (err) {
+    error.value =
+      err instanceof Error ? err.message : 'Pin-Status konnte nicht geändert werden'
+  } finally {
+    actionEntryId.value = null
   }
 }
 
@@ -127,7 +134,9 @@ onMounted(loadFeed)
         <h2>Gedankenstrom</h2>
       </div>
 
-      <button type="button" class="ghost" @click="loadFeed">Refresh</button>
+      <button type="button" class="ghost" :disabled="loading" @click="loadFeed">
+        Refresh
+      </button>
     </header>
 
     <form class="composer" @submit.prevent="createEntry">
@@ -178,11 +187,22 @@ onMounted(loadFeed)
         </div>
 
         <div class="entry-actions">
-          <button type="button" @click="togglePin(entry.id)">
+          <button
+            type="button"
+            :disabled="actionEntryId === entry.id"
+            @click="togglePin(entry.id)"
+          >
             {{ entry.pinned ? 'Unpin' : 'Pin' }}
           </button>
 
-          <button type="button" class="danger" @click="deleteEntry(entry.id)">Löschen</button>
+          <button
+            type="button"
+            class="danger"
+            :disabled="actionEntryId === entry.id"
+            @click="deleteEntry(entry.id)"
+          >
+            Löschen
+          </button>
         </div>
       </div>
 

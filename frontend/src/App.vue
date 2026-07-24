@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { apiRequest, ApiError, setUnauthorizedHandler } from './api'
 import LoginView from './views/LoginView.vue'
 import DashboardView from './views/DashboardView.vue'
 
@@ -24,27 +25,25 @@ const bootError = ref('')
 const authError = ref('')
 const authLoading = ref(false)
 
+function handleUnauthorized() {
+  user.value = null
+  authError.value = 'Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.'
+}
+
 async function loadMe() {
   booting.value = true
   bootError.value = ''
 
   try {
-    const response = await fetch('/api/me', {
-      credentials: 'same-origin',
+    const data = await apiRequest<MeResponse>('/api/me', {
+      notifyUnauthorized: false,
     })
-
-    if (response.status === 401) {
+    user.value = data.user
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
       user.value = null
       return
     }
-
-    if (!response.ok) {
-      throw new Error(`API antwortet mit HTTP ${response.status}`)
-    }
-
-    const data = (await response.json()) as MeResponse
-    user.value = data.user
-  } catch (err) {
     bootError.value = err instanceof Error ? err.message : 'Unbekannter Fehler'
   } finally {
     booting.value = false
@@ -56,50 +55,54 @@ async function handleLogin(payload: LoginPayload) {
   authError.value = ''
 
   try {
-    const response = await fetch('/api/login', {
+    const data = await apiRequest<MeResponse>('/api/login', {
       method: 'POST',
-      credentials: 'same-origin',
+      notifyUnauthorized: false,
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
     })
 
-    if (!response.ok) {
-      let message = 'Login fehlgeschlagen'
-
-      try {
-        const data = (await response.json()) as { error?: string }
-
-        if (data.error === 'invalid_credentials') {
-          message = 'Username oder Passwort ist falsch.'
-        }
-      } catch {
-        // Antwort war kein JSON. Drama, aber kontrolliertes Drama.
-      }
-
-      throw new Error(message)
-    }
-
-    const data = (await response.json()) as MeResponse
     user.value = data.user
   } catch (err) {
-    authError.value = err instanceof Error ? err.message : 'Unbekannter Fehler'
+    authError.value =
+      err instanceof ApiError && err.code === 'invalid_credentials'
+        ? 'Username oder Passwort ist falsch.'
+        : err instanceof Error
+          ? err.message
+          : 'Unbekannter Fehler'
   } finally {
     authLoading.value = false
   }
 }
 
 async function handleLogout() {
-  await fetch('/api/logout', {
-    method: 'POST',
-    credentials: 'same-origin',
-  })
+  authError.value = ''
+
+  try {
+    await apiRequest<{ status: string }>('/api/logout', {
+      method: 'POST',
+      notifyUnauthorized: false,
+    })
+  } catch (err) {
+    authError.value =
+      err instanceof Error
+        ? `Logout konnte serverseitig nicht bestätigt werden: ${err.message}`
+        : 'Logout konnte serverseitig nicht bestätigt werden.'
+  }
 
   user.value = null
 }
 
-onMounted(loadMe)
+onMounted(() => {
+  setUnauthorizedHandler(handleUnauthorized)
+  void loadMe()
+})
+
+onBeforeUnmount(() => {
+  setUnauthorizedHandler(null)
+})
 </script>
 
 <template>
